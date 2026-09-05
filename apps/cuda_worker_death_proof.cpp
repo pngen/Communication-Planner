@@ -115,6 +115,7 @@ int main(int argc, char** argv) {
   killChild(wa);
   std::this_thread::sleep_for(std::chrono::milliseconds(300));
   ASSERT(pidA != 0, "Worker A has a distinct OS PID");
+  std::printf("PROCESS: Worker A terminated PID=%lu\n", (unsigned long)pidA);
 
   // Old plan must become non-executable.
   bool freshAfterDeath = true; ctrl.revalidate(planOld.id, freshAfterDeath, e);
@@ -145,6 +146,7 @@ int main(int argc, char** argv) {
   spawn(workerExe, " " + std::to_string(port) + " A 3000", wa2);
   pidA2 = wa2.valid ? wa2.pi.dwProcessId : 0;
   ASSERT(pidA2 != 0 && pidA2 != pidA, "Worker A\x27 has a fresh distinct OS PID");
+  std::printf("PROCESS: Worker A\x27 PID=%lu (distinct from dead Worker A PID=%lu)\n", (unsigned long)pidA2, (unsigned long)pidA);
   CommunicationPlan planNew; bool feasNew = false;
   submitUntilFeasible(CommunicationRequestId(2), payload, planNew, feasNew);
   ASSERT(feasNew, "fresh plan after Worker A\x27 republish is feasible");
