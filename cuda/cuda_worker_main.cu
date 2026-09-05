@@ -127,7 +127,7 @@ int main(int argc, char** argv) {
       okc = okc && cleanOk && baselineOk;
       std::printf("CUDA WORKER executed plan %llu bytes=%llu parity=%d clean=%d baseline=%d freeAfter=%llu\n", (unsigned long long)m.planId.value(), (unsigned long long)bytes, (int)okc, (int)cleanOk, (int)baselineOk, (unsigned long long)freeAfter);
       { char path[128]; std::snprintf(path, sizeof path, "cuda_worker_log_%llu.txt", (unsigned long long)boot.value());
-        FILE* f = nullptr; if (fopen_s(&f, path, "w") == 0 && f) { std::fprintf_s(f, "freeBefore=%llu freeAfter=%llu parity=%d clean=%d baseline=%d\n", (unsigned long long)freeBefore, (unsigned long long)freeAfter, (int)okc, (int)cleanOk, (int)baselineOk); std::fclose(f); } }
+        FILE* f = nullptr; if (fopen_s(&f, path, "w") == 0 && f) { fprintf_s(f, "freeBefore=%llu freeAfter=%llu parity=%d clean=%d baseline=%d\n", (unsigned long long)freeBefore, (unsigned long long)freeAfter, (int)okc, (int)cleanOk, (int)baselineOk); std::fclose(f); } }
       Message res; res.type = MessageType::EXECUTION_RESULT; res.planId = m.planId; res.ok = okc; res.bytes = bytes;
       res.worker = wid; res.boot = boot;
       std::vector<std::byte> pl; encodeMessage(res, pl); Frame rf; rf.type = MessageType::EXECUTION_RESULT; rf.payload = pl;
