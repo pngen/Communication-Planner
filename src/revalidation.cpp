@@ -54,7 +54,8 @@ RevalidationResult revalidatePath(const Path& path, const EvidenceSnapshot& snap
 RevalidationResult revalidatePlan(const CommunicationPlan& plan, const EvidenceSnapshot& snap) {
   RevalidationResult r;
   r.ok = true;
-  r.feasibility = Feasibility::FEASIBLE;
+  r.feasibility = Feasibility::REVALIDATION_REQUIRED;  // default; FEASIBLE only when all facts are current
+  bool allOk = true;
   const auto emap = snap.endpointMap();
   const auto lmap = snap.linkMap();
 
@@ -112,6 +113,7 @@ RevalidationResult revalidatePlan(const CommunicationPlan& plan, const EvidenceS
   for (const Path& p : plan.candidatePaths) {
     const RevalidationResult pr = revalidatePath(p, snap);
     if (!pr.ok) { r = pr; return r; }
+    if (pr.feasibility != Feasibility::FEASIBLE) allOk = false;
   }
 
   // Resource availability for required staging stays above zero.
@@ -128,6 +130,7 @@ RevalidationResult revalidatePlan(const CommunicationPlan& plan, const EvidenceS
     }
   }
 
+  if (allOk) r.feasibility = Feasibility::FEASIBLE;
   return r;
 }
 

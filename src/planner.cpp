@@ -238,7 +238,8 @@ PlanOutcome planCommunication(const CommunicationRequest& request,
   std::set<ResourceId> claims;
   const auto lmap = snapshot.linkMap();
   const auto emap = snapshot.endpointMap();
-  for (const CandidatePath& c : orderedCands) {
+  for (std::size_t ci = 0; ci < orderedCands.size(); ++ci) {
+    const CandidatePath& c = orderedCands[ci];
     for (const Hop& h : c.hops) {
       auto li = lmap.find(h.link);
       if (li != lmap.end()) lgs.insert({li->second.id, li->second.generation});
@@ -247,8 +248,10 @@ PlanOutcome planCommunication(const CommunicationRequest& request,
       if (si != emap.end()) egs.insert({si->second.id, si->second.generation});
       if (di != emap.end()) egs.insert({di->second.id, di->second.generation});
     }
-    for (std::size_t i = 0; i + 1 < c.hops.size(); ++i) {
-      claims.insert(internal::stagingResourceFor(c.hops[i].to));
+    if (ci == 0) {  // claims needed to EXECUTE the primary plan
+      for (std::size_t i = 0; i + 1 < c.hops.size(); ++i) {
+        claims.insert(internal::stagingResourceFor(c.hops[i].to));
+      }
     }
   }
   plan.endpointGenerations.assign(egs.begin(), egs.end());

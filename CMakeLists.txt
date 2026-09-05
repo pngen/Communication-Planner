@@ -43,6 +43,7 @@ add_library(communication_planner STATIC
   src/protocol.cpp
   src/multicast.cpp
   src/collective.cpp
+  src/coordinator.cpp
 )
 add_library(CommunicationPlanner::CommunicationPlanner ALIAS communication_planner)
 
