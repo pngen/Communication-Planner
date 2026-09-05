@@ -1,0 +1,12 @@
+add_executable(cp_coordinator coordinator_main.cpp)
+target_link_libraries(cp_coordinator PRIVATE CommunicationPlanner::CommunicationPlanner)
+cp_apply_warnings(cp_coordinator)
+
+add_executable(cp_worker worker_main.cpp)
+target_link_libraries(cp_worker PRIVATE CommunicationPlanner::CommunicationPlanner)
+cp_apply_warnings(cp_worker)
+
+add_executable(cp_multiprocess_proof proof_main.cpp)
+target_link_libraries(cp_multiprocess_proof PRIVATE CommunicationPlanner::CommunicationPlanner)
+cp_apply_warnings(cp_multiprocess_proof)
+add_test(NAME multiprocess COMMAND cp_multiprocess_proof $<TARGET_FILE:cp_coordinator> $<TARGET_FILE:cp_worker>)

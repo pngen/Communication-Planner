@@ -29,6 +29,7 @@ class CoordinatorServer {
   bool start(unsigned short port, std::string& err);
   unsigned short boundPort() const;
   void stop();
+  bool isStopping() const;
   CoordinatorEpoch epoch() const;
   std::size_t currentPlanCount() const;
   // True when at least one plan is in REVALIDATION_REQUIRED after recovery.
@@ -57,6 +58,7 @@ class CoordinatorClient {
   bool submitRequest(const CommunicationRequest& req, CommunicationPlan& out, bool& feasible, std::string& err);
   bool commitPlan(CommunicationPlanId id, bool& ok, std::string& err);
   bool revalidate(CommunicationPlanId id, bool& fresh, std::string& err);
+  bool queryPlanState(CommunicationPlanId id, int& state, std::string& err);
   bool cancel(CommunicationRequestId reqId, CommunicationPlanId planId, std::string& err);
   bool supersede(CommunicationRequestId reqId, CommunicationPlanId planId, std::string& err);
   bool executionHandoff(CommunicationPlanId id, bool& ok, std::string& err);
@@ -66,7 +68,7 @@ class CoordinatorClient {
 
  private:
   struct Impl;
-  std::unique_ptr<Impl> impl_;
+  Impl* impl_{nullptr};
 };
 
 }  // namespace communication_planner

@@ -66,6 +66,14 @@ struct CoordinatorServer::Impl {
     : weights(w), bounds(b), storePath(std::move(sp)), epoch(1) {
     snap.epoch = epoch;
     snap.authorityGeneration = currentAuthority();
+    snap.topologyGeneration = TopologyGeneration(1);
+    snap.capacityGeneration = CapacityGeneration(1);
+    snap.reservationGeneration = ReservationGeneration(1);
+    snap.congestionGeneration = CongestionGeneration(1);
+    snap.capabilityGeneration = CapabilityGeneration(1);
+    snap.healthGeneration = HealthGeneration(1);
+    snap.placementGeneration = PlacementGeneration(1);
+    snap.policyGeneration = PolicyGeneration(1);
   }
 
   void sendFrame(SOCKET s, MessageType t, const Message& m) {
@@ -80,9 +88,9 @@ struct CoordinatorServer::Impl {
     Message m; m.type = MessageType::ERROR; m.error = e;
     sendFrame(s, MessageType::ERROR, m);
   }
-  void sendOk(SOCKET s, MessageType t, std::uint64_t id) {
-    Message m; m.type = t; m.ok = true; m.planId = CommunicationPlanId(id);
-    sendFrame(s, t, m);
+  void sendOk(SOCKET s, MessageType /*ignored*/, std::uint64_t id) {
+    Message m; m.type = MessageType::COMMIT_RESULT; m.ok = true; m.planId = CommunicationPlanId(id);
+    sendFrame(s, MessageType::COMMIT_RESULT, m);
   }
 
   void publishEndpoint(const Endpoint& e) {
@@ -95,6 +103,30 @@ struct CoordinatorServer::Impl {
     for (auto& lx : snap.links) if (lx.id == l.id) { lx = l; replaced = true; break; }
     if (!replaced) snap.links.push_back(l);
     snap.topologyGeneration = snap.topologyGeneration.next();
+  }
+
+  void loadStoreIfAny() {
+    std::ifstream ifs(storePath, std::ios::binary | std::ios::ate);
+    if (!ifs) return;
+    std::streamsize sz = ifs.tellg();
+    ifs.seekg(0, std::ios::beg);
+    if (sz <= 0) return;
+    std::vector<char> buf((std::size_t)sz);
+    ifs.read(buf.data(), sz);
+    StoreState st;
+    PersistError pe = parseStore(reinterpret_cast<const std::byte*>(buf.data()), (std::size_t)sz, st);
+    if (!pe.ok()) return;
+    // A new coordinator epoch makes the old epoch stale.
+    epoch = st.epoch.next();
+    snap.epoch = epoch;
+    conservativeRecovery(st);
+    for (const StoreRecord& rec : st.plans) {
+      PlanRecord pr; pr.plan = rec.plan; pr.state = rec.state;
+      plans[rec.plan.id] = pr;
+      currentByRequest[rec.plan.requestId] = rec.plan.id;
+    }
+    supersessions = st.supersessions;
+    requests = st.requests;
   }
 
   void fenceWorker(WorkerId id) {
@@ -253,6 +285,14 @@ void CoordinatorServer::Impl::handleMessage(SOCKET s, const Message& m) {
       sendOk(s, MessageType::PUBLISH_CONGESTION, m.linkId.value());
       return;
     }
+    case MessageType::QUERY_PLAN: {
+      std::lock_guard<std::mutex> lk(mtx);
+      auto it = plans.find(m.planId);
+      Message qm; qm.type = MessageType::COMMIT_RESULT;
+      if (it != plans.end()) { qm.ok = true; qm.planId = CommunicationPlanId((std::uint64_t)it->second.state); }
+      sendFrame(s, MessageType::COMMIT_RESULT, qm);
+      return;
+    }
     case MessageType::SUBMIT_REQUEST: {
       CommunicationPlan planOut; bool feasible = false;
       {
@@ -385,10 +425,12 @@ CoordinatorServer::~CoordinatorServer() { stop(); }
 bool CoordinatorServer::start(unsigned short port, std::string& err) {
   transport::libraryInit();
   std::lock_guard<std::mutex> lk(impl_->mtx);
+  impl_->loadStoreIfAny();
   if (!impl_->listener.listenOn(port, err)) return false;
   impl_->acceptThread = std::thread([this](){ impl_->acceptLoop(); });
   return true;
 }
+bool CoordinatorServer::isStopping() const { return impl_->stopping.load(); }
 unsigned short CoordinatorServer::boundPort() const { return impl_->listener.port(); }
 CoordinatorEpoch CoordinatorServer::epoch() const { return impl_->epoch; }
 
@@ -447,10 +489,11 @@ struct CoordinatorClient::Impl {
   }
 };
 
-CoordinatorClient::~CoordinatorClient() { disconnect(); }
+CoordinatorClient::~CoordinatorClient() { if (impl_) { disconnect(); delete impl_; impl_ = nullptr; } }
 void CoordinatorClient::disconnect() { if (impl_ && impl_->connected) { transport::closeSock(impl_->sock); impl_->connected = false; } }
 bool CoordinatorClient::connect(const std::string& host, unsigned short port, std::string& err) {
-  impl_ = std::make_unique<Impl>();
+  if (impl_) { delete impl_; impl_ = nullptr; }
+  impl_ = new Impl;
   transport::libraryInit();
   impl_->sock = transport::connectTo(host, port, err);
   if (impl_->sock == INVALID_SOCKET) return false;
@@ -460,7 +503,7 @@ bool CoordinatorClient::connect(const std::string& host, unsigned short port, st
   return true;
 }
 
-#define CP_CLIENT_SEND(body) do { Message reply; if (!impl_->send(m, reply)) { err="transport error"; return false; } if (reply.type==MessageType::ERROR) { err=reply.error; return false; } body } while (0)
+#define CP_CLIENT_SEND(body) do { if (!impl_) { err="not connected"; return false; } Message reply; if (!impl_->send(m, reply)) { err="transport error"; return false; } if (reply.type==MessageType::ERROR) { err=reply.error; return false; } body } while (0)
 
 bool CoordinatorClient::registerWorker(WorkerId worker, WorkerBootId boot, const std::string& name, std::string& err) {
   Message m; m.type=MessageType::REGISTER; m.worker=worker; m.boot=boot; m.name=name;
@@ -483,6 +526,7 @@ bool CoordinatorClient::publishCongestion(LinkId link, const Congestion& cong, s
   CP_CLIENT_SEND({ return reply.ok; });
 }
 bool CoordinatorClient::submitRequest(const CommunicationRequest& req, CommunicationPlan& out, bool& feasible, std::string& err) {
+  if (!impl_) { err="not connected"; return false; }
   Message m; m.type=MessageType::SUBMIT_REQUEST; m.request=req;
   Message reply; if (!impl_->send(m, reply)) { err="transport error"; return false; }
   if (reply.type==MessageType::ERROR) { err=reply.error; return false; }
@@ -505,6 +549,14 @@ bool CoordinatorClient::executionHandoff(CommunicationPlanId id, bool& ok, std::
 bool CoordinatorClient::executionResult(CommunicationPlanId id, bool okv, std::string& err) {
   Message m; m.type=MessageType::EXECUTION_RESULT; m.planId=id; m.ok=okv;
   CP_CLIENT_SEND({ return reply.ok; });
+}
+bool CoordinatorClient::queryPlanState(CommunicationPlanId id, int& state, std::string& err) {
+  if (!impl_) { err="not connected"; return false; }
+  Message m; m.type=MessageType::QUERY_PLAN; m.planId=id;
+  Message reply; if (!impl_->send(m, reply)) { err="transport error"; return false; }
+  if (reply.type==MessageType::ERROR) { err=reply.error; return false; }
+  state = (int)reply.planId.value();
+  return reply.ok;
 }
 bool CoordinatorClient::cancel(CommunicationRequestId reqId, CommunicationPlanId planId, std::string& err) {
   Message m; m.type=MessageType::CANCEL; m.requestId=reqId; m.planId=planId;

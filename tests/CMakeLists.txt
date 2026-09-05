@@ -2,3 +2,13 @@ add_executable(cp_test_core test_core.cpp)
 target_link_libraries(cp_test_core PRIVATE CommunicationPlanner::CommunicationPlanner)
 cp_apply_warnings(cp_test_core)
 add_test(NAME core COMMAND cp_test_core)
+
+add_executable(cp_test_property test_property.cpp)
+target_link_libraries(cp_test_property PRIVATE CommunicationPlanner::CommunicationPlanner)
+cp_apply_warnings(cp_test_property)
+add_test(NAME property COMMAND cp_test_property)
+
+add_executable(cp_test_concurrency test_concurrency.cpp)
+target_link_libraries(cp_test_concurrency PRIVATE CommunicationPlanner::CommunicationPlanner)
+cp_apply_warnings(cp_test_concurrency)
+add_test(NAME concurrency COMMAND cp_test_concurrency)

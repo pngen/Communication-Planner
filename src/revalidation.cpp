@@ -66,14 +66,16 @@ RevalidationResult revalidatePlan(const CommunicationPlan& plan, const EvidenceS
       r.ok = false; r.detail = "topology generation regressed"; r.changes.push_back(r.detail);
       return r;
     }
-    if (!genOk(snap.capacityGeneration.value(), plan.capacityGeneration.value(), d)) {
-      r.ok = false; r.detail = "capacity generation regressed"; r.changes.push_back(r.detail);
-      return r;
-    }
-    if (!genOk(snap.congestionGeneration.value(), plan.congestionGeneration.value(), d)) {
-      r.ok = false; r.detail = "congestion generation regressed"; r.changes.push_back(r.detail);
-      return r;
-    }
+  }
+  // Dynamic evidence generations: if they ADVANCED, the bound evidence is stale.
+  if (!plan.congestionGeneration.isNull() && snap.congestionGeneration != plan.congestionGeneration) {
+    r.ok = false; r.detail = "congestion generation advanced"; r.changes.push_back(r.detail); return r;
+  }
+  if (!plan.capacityGeneration.isNull() && snap.capacityGeneration != plan.capacityGeneration) {
+    r.ok = false; r.detail = "capacity generation advanced"; r.changes.push_back(r.detail); return r;
+  }
+  if (!plan.reservationGeneration.isNull() && snap.reservationGeneration != plan.reservationGeneration) {
+    r.ok = false; r.detail = "reservation generation advanced"; r.changes.push_back(r.detail); return r;
   }
 
   for (const auto& pr : plan.endpointGenerations) {
