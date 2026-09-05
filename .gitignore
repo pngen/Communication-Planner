@@ -17,6 +17,7 @@ storage-proof-*/
 !*.crt
 *_store.bin
 proof_store.bin
+cuda_worker_log_*.txt
 
 # CMake
 CMakeCache.txt

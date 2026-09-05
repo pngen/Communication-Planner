@@ -19,7 +19,7 @@ PlanOutcome buildCollectivePlan(const CommunicationRequest& req,
   PlanOutcome out;
   CommunicationPlan plan;
   plan.id = CommunicationPlanId::next();
-  plan.generation = CommunicationPlanGeneration(1);
+  plan.generation = nextPlanGeneration();
   plan.requestId = req.id;
   plan.requestGeneration = req.generation;
   plan.shape = RequestShape::COLLECTIVE;

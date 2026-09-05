@@ -40,4 +40,7 @@ PlanOutcome buildCollectivePlan(const CommunicationRequest& req,
                                 const RankingWeights& weights,
                                 const Bounds& bounds);
 
+// Monotonic plan-generation allocator (fresh re-plans advance generation).
+CommunicationPlanGeneration nextPlanGeneration();
+
 }  // namespace communication_planner::internal

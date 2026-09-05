@@ -23,6 +23,7 @@ std::string toString(MessageType t) {
     case MessageType::CANCEL: return "CANCEL";
     case MessageType::EXECUTION_HANDOFF: return "EXECUTION_HANDOFF";
     case MessageType::EXECUTION_RESULT: return "EXECUTION_RESULT";
+    case MessageType::EXECUTE: return "EXECUTE";
     case MessageType::SAVE: return "SAVE";
     case MessageType::SHUTDOWN: return "SHUTDOWN";
     case MessageType::ERROR: return "ERROR";
@@ -273,8 +274,16 @@ ProtocolError decodeMessage(MessageType type, const std::byte* payload, std::siz
       if(!r.u64(&v)) return fail("ID"); out.requestId=CommunicationRequestId(v);
       if(!r.u64(&v)) return fail("ID2"); out.planId=CommunicationPlanId(v); break;
     case MessageType::COMMIT_RESULT:
-    case MessageType::EXECUTION_RESULT:
       if(!r.boo(&out.ok)) return fail("RES ok"); if(!r.u64(&v)) return fail("RES id"); out.planId=CommunicationPlanId(v); break;
+    case MessageType::EXECUTION_RESULT:
+      if(!r.boo(&out.ok)) return fail("ER ok"); if(!r.u64(&v)) return fail("ER id"); out.planId=CommunicationPlanId(v);
+      if(!r.u64(&v)) return fail("ER worker"); out.worker=WorkerId(v);
+      if(!r.u64(&v)) return fail("ER boot"); out.boot=WorkerBootId(v); break;
+    case MessageType::EXECUTE:
+      if(!r.u64(&v)) return fail("EX id"); out.planId=CommunicationPlanId(v);
+      if(!r.u64(&v)) return fail("EX bytes"); out.bytes=v;
+      if(!r.u64(&v)) return fail("EX worker"); out.worker=WorkerId(v);
+      if(!r.u64(&v)) return fail("EX boot"); out.boot=WorkerBootId(v); break;
     case MessageType::PUBLISH_TOPOLOGY:
       if(!r.u64(&v)) return fail("TOPO gen"); out.endpoint.capability.generation=CapabilityGeneration(v); break;
     case MessageType::SAVE: break;
@@ -312,8 +321,9 @@ ProtocolError encodeMessage(const Message& m, std::vector<std::byte>& payload){
     case MessageType::QUERY_PLAN: w.u64(m.planId.value()); break;
     case MessageType::CANCEL:
     case MessageType::SUPERSEDE: w.u64(m.requestId.value()); w.u64(m.planId.value()); break;
-    case MessageType::COMMIT_RESULT:
-    case MessageType::EXECUTION_RESULT: w.boo(m.ok); w.u64(m.planId.value()); break;
+    case MessageType::COMMIT_RESULT: w.boo(m.ok); w.u64(m.planId.value()); break;
+    case MessageType::EXECUTION_RESULT: w.boo(m.ok); w.u64(m.planId.value()); w.u64(m.worker.value()); w.u64(m.boot.value()); break;
+    case MessageType::EXECUTE: w.u64(m.planId.value()); w.u64(m.bytes); w.u64(m.worker.value()); w.u64(m.boot.value()); break;
     case MessageType::PUBLISH_TOPOLOGY: w.u64(m.endpoint.capability.generation.value()); break;
     case MessageType::SAVE: break;
     case MessageType::SHUTDOWN: break;

@@ -49,12 +49,19 @@ Requires CMake (>= 3.20) and a C++20 compiler. On MSVC the library, tests, examp
 
 Debug is supported as well. No test uses a timeout; a hanging test is treated as a lifecycle defect.
 
+The CUDA proofs are built directly with nvcc (the Visual Studio generator has no registered CUDA MSBuild toolset on this host), via the documented script:
+
+    scripts\build_cuda.bat
+
+This produces build\cuda\cp_cuda_worker.exe and build\cuda\cp_cuda_plan_gated_proof.exe. The `cuda_worker_death` CTest runs the integrated worker-death proof against a live CUDA worker when that executable is present, and is otherwise SKIPPED (return code 77) with a clear message — never a false pass.
+
 ## Proof of the runtime
 
 The repository exercises the real runtime:
 
 - **Real multiprocess proof** (independent OS processes + framed checksummed TCP): a Communication Planner coordinator, Worker A, and Worker B register and publish real endpoint/link evidence; a direct path is initially ranked first; congestion generation advance makes the plan REVALIDATION_REQUIRED and a staged fallback wins; killing Worker A fences its WorkerBootId so its endpoint/link evidence becomes stale and no path remains until Worker A' restarts with a fresh boot; a coordinator restart recovers durable history conservatively and marks every recovered executable plan REVALIDATION_REQUIRED.
 - **Real CUDA proof** on an NVIDIA RTX 5090 (sm_120): discovers the device over CUDA, publishes real host/GPU capability evidence, plans a host<->device path, commits device and pinned host staging, executes real cudaMalloc / H2D / kernel / D2H / synchronize with CPU parity, and verifies device memory returns to baseline. Stale endpoint/link generation rejects an old plan before any allocation. A hard reservation conflict forces a staged host path even when a direct path is nominally cheaper.
+- **Real CUDA worker-death communication proof** (integrated): a coordinator OS process, a real CUDA Worker A OS process (fresh WorkerBootId) that discovers the RTX 5090 and publishes real host/GPU evidence, a plan-gated handoff where Worker A performs real cudaMalloc / pinned host / H2D / kernel / D2H with CPU parity and returns device memory to measured baseline; then Worker A is terminated as a real OS process, its old WorkerBootId and endpoint/link generations are fenced, the old plan becomes non-executable, stale endpoint/link/result replay is rejected, and a reincarnated Worker A' (fresh PID, fresh WorkerBootId) rediscover the RTX 5090, republishes, produces a fresh CommunicationPlanGeneration, and re-executes real CUDA movement/cleanup. The proof carries CoordinatorEpoch, WorkerId, WorkerBootId, EndpointGeneration, LinkGeneration, CommunicationPlanGeneration, and SourceBoot/Authority authority.
 - **Real host-memory, storage-staging, and loopback-TCP proofs** measure real completed copies, file staging, and framed loopback transfer bytes/latency (labelled REAL / MEASURED).
 - **Deterministic SYNTHETIC scenarios** (labelled SYNTHETIC) cover two-GPU direct-vs-staged, four-GPU collective shape, multicast relay tree, congested-direct alternate route, reservation-blocked preferred path, and failure-domain-aware routing.
 

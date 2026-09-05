@@ -35,6 +35,8 @@ struct WorkerInfo {
 struct PlanRecord {
   CommunicationPlan plan;
   PlanState state{PlanState::REQUESTED};
+  WorkerId worker;          // owner of the primary source endpoint (executor)
+  WorkerBootId boot;        // worker's boot bound at plan time (executor authority)
 };
 
 struct CoordinatorServer::Impl {
@@ -59,6 +61,7 @@ struct CoordinatorServer::Impl {
 
   std::map<SOCKET, WorkerId> socketToWorker;
   std::map<WorkerId, WorkerInfo> workers;
+  std::set<std::pair<WorkerId, WorkerBootId>> fenced;  // dead worker+boot authorities (stale replay rejected)
   std::set<SOCKET> activeSockets;
   std::vector<std::thread> connThreads;
 
@@ -135,6 +138,7 @@ struct CoordinatorServer::Impl {
     auto it = workers.find(id);
     if (it == workers.end()) return;
     WorkerInfo& w = it->second;
+    fenced.insert({id, w.boot});  // old boot is permanently stale
     w.alive = false;
     for (EndpointId eid : w.endpoints) {
       for (auto& e : snap.endpoints) if (e.id == eid) { e.reachable = false; e.ready = false; }
@@ -243,6 +247,7 @@ void CoordinatorServer::Impl::handleMessage(SOCKET s, const Message& m) {
     case MessageType::REGISTER: {
       std::lock_guard<std::mutex> lk(mtx);
       if (m.worker.isNull() || m.boot.isNull()) { sendError(s, "null worker/boot"); return; }
+      if (fenced.count({m.worker, m.boot})) { sendError(s, "fenced boot authority"); return; }
       WorkerInfo w; w.id = m.worker; w.boot = m.boot; w.name = m.name; w.sock = s; w.alive = true;
       workers[m.worker] = w;
       socketToWorker[s] = m.worker;
@@ -273,6 +278,10 @@ void CoordinatorServer::Impl::handleMessage(SOCKET s, const Message& m) {
     }
     case MessageType::PUBLISH_CAPACITY: {
       std::lock_guard<std::mutex> lk(mtx);
+      if (!m.worker.isNull()) {
+        auto wk = workers.find(m.worker);
+        if (wk == workers.end() || !wk->second.alive || wk->second.boot != m.boot) { sendError(s, "stale publisher authority"); return; }
+      }
       snap.capacityGeneration = snap.capacityGeneration.next();
       for (auto& l : snap.links) if (l.id == m.linkId) l.capacityEvidence = m.capacity;
       sendOk(s, MessageType::PUBLISH_CAPACITY, m.linkId.value());
@@ -280,6 +289,10 @@ void CoordinatorServer::Impl::handleMessage(SOCKET s, const Message& m) {
     }
     case MessageType::PUBLISH_CONGESTION: {
       std::lock_guard<std::mutex> lk(mtx);
+      if (!m.worker.isNull()) {
+        auto wk = workers.find(m.worker);
+        if (wk == workers.end() || !wk->second.alive || wk->second.boot != m.boot) { sendError(s, "stale publisher authority"); return; }
+      }
       snap.congestionGeneration = snap.congestionGeneration.next();
       for (auto& l : snap.links) if (l.id == m.linkId) l.congestion = m.congestion;
       sendOk(s, MessageType::PUBLISH_CONGESTION, m.linkId.value());
@@ -305,6 +318,10 @@ void CoordinatorServer::Impl::handleMessage(SOCKET s, const Message& m) {
         if (feasible && po.plan) {
           CommunicationPlan plan = std::move(*po.plan);
           PlanRecord rec; rec.plan = plan; rec.state = PlanState::PLAN_READY;
+          if (!plan.orderedStages.empty()) {
+            const EndpointId srcId = plan.orderedStages.front().source;
+            for (const Endpoint& e : snap.endpoints) if (e.id == srcId) { rec.worker = e.worker; rec.boot = e.workerBoot; break; }
+          }
           plans[plan.id] = rec;
           currentByRequest[m.request.id] = plan.id;
           planOut = plan;
@@ -333,15 +350,30 @@ void CoordinatorServer::Impl::handleMessage(SOCKET s, const Message& m) {
     }
     case MessageType::EXECUTION_HANDOFF: {
       bool ok = false;
+      SOCKET workerSock = INVALID_SOCKET;
+      Frame executeFrame;
       {
         std::lock_guard<std::mutex> lk(mtx);
         auto it = plans.find(m.planId);
         if (it != plans.end()) {
           RevalidationResult rr = revalidatePlan(it->second.plan, snap);
-          if (rr.ok) { it->second.state = PlanState::ACTIVE; ok = true; }
-          else { it->second.state = PlanState::REVALIDATION_REQUIRED; ok = false; }
+          if (rr.ok) {
+            it->second.state = PlanState::ACTIVE; ok = true;
+            if (!it->second.worker.isNull()) {
+              auto wk = workers.find(it->second.worker);
+              if (wk != workers.end() && wk->second.alive) {
+                workerSock = wk->second.sock;
+                Message em; em.type = MessageType::EXECUTE; em.planId = it->second.plan.id;
+                em.bytes = it->second.plan.orderedStages.empty() ? 0 : it->second.plan.orderedStages.front().payload.count();
+                em.worker = it->second.worker; em.boot = it->second.boot;
+                executeFrame.type = MessageType::EXECUTE;
+                std::vector<std::byte> plv; encodeMessage(em, plv); executeFrame.payload = plv;
+              }
+            }
+          } else { it->second.state = PlanState::REVALIDATION_REQUIRED; ok = false; }
         }
       }
+      if (ok && workerSock != INVALID_SOCKET) { std::string e2; transport::sendFrame(workerSock, executeFrame, e2); (void)e2; }
       Message rm; rm.type = MessageType::COMMIT_RESULT; rm.ok = ok; rm.planId = m.planId;
       sendFrame(s, MessageType::COMMIT_RESULT, rm);
       return;
@@ -350,7 +382,15 @@ void CoordinatorServer::Impl::handleMessage(SOCKET s, const Message& m) {
       std::lock_guard<std::mutex> lk(mtx);
       auto it = plans.find(m.planId);
       if (it != plans.end() && it->second.state == PlanState::ACTIVE) {
+        if (!m.worker.isNull()) {
+          if (it->second.worker != m.worker || it->second.boot != m.boot) { sendError(s, "stale result authority"); return; }
+        }
         it->second.state = m.ok ? PlanState::COMPLETED : PlanState::FAILED;
+      } else {
+        // stale result for a non-active plan is ignored (no mutation of current state)
+        Message rm; rm.type = MessageType::COMMIT_RESULT; rm.ok = false; rm.planId = m.planId; rm.error = "stale result";
+        sendFrame(s, MessageType::COMMIT_RESULT, rm);
+        return;
       }
       Message rm; rm.type = MessageType::COMMIT_RESULT; rm.ok = true; rm.planId = m.planId;
       sendFrame(s, MessageType::COMMIT_RESULT, rm);

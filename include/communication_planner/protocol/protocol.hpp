@@ -19,7 +19,7 @@ enum class MessageType : std::uint8_t {
   HELLO, REGISTER, PUBLISH_ENDPOINT, PUBLISH_LINK, PUBLISH_TOPOLOGY,
   PUBLISH_CAPACITY, PUBLISH_CONGESTION, SUBMIT_REQUEST, QUERY_PLAN, PLAN_RESULT,
   COMMIT_REQUEST, COMMIT_RESULT, REVALIDATE, SUPERSEDE, CANCEL, EXECUTION_HANDOFF,
-  EXECUTION_RESULT, SAVE, SHUTDOWN, ERROR
+  EXECUTION_RESULT, EXECUTE, SAVE, SHUTDOWN, ERROR
 };
 std::string toString(MessageType t);
 
@@ -56,6 +56,7 @@ struct Message {
   CommunicationPlanId planId;
   CommunicationRequestId requestId;
   bool ok{false};
+  std::uint64_t bytes{0};
   std::string error;
 };
 

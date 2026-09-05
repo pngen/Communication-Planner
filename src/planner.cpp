@@ -7,6 +7,7 @@
 #include "planner_internal.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <functional>
 #include <map>
 #include <set>
@@ -23,6 +24,11 @@ namespace internal {
 
 ResourceId stagingResourceFor(EndpointId relay) {
   return ResourceId(relay.value() * 2 + 1);
+}
+
+CommunicationPlanGeneration nextPlanGeneration() {
+  static std::atomic<std::uint64_t> counter{1};
+  return CommunicationPlanGeneration(counter.fetch_add(1, std::memory_order_seq_cst));
 }
 
 CandidatePath directCandidate(EndpointId src, EndpointId dst, LinkId link) {
@@ -201,7 +207,7 @@ PlanOutcome planCommunication(const CommunicationRequest& request,
 
   CommunicationPlan plan;
   plan.id = CommunicationPlanId::next();
-  plan.generation = CommunicationPlanGeneration(1);
+  plan.generation = internal::nextPlanGeneration();
   plan.requestId = request.id;
   plan.requestGeneration = request.generation;
   plan.shape = RequestShape::POINT_TO_POINT;
