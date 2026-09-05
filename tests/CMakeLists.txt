@@ -12,3 +12,8 @@ add_executable(cp_test_concurrency test_concurrency.cpp)
 target_link_libraries(cp_test_concurrency PRIVATE CommunicationPlanner::CommunicationPlanner)
 cp_apply_warnings(cp_test_concurrency)
 add_test(NAME concurrency COMMAND cp_test_concurrency)
+
+add_executable(cp_test_live test_live.cpp)
+target_link_libraries(cp_test_live PRIVATE CommunicationPlanner::CommunicationPlanner)
+cp_apply_warnings(cp_test_live)
+add_test(NAME live COMMAND cp_test_live)
