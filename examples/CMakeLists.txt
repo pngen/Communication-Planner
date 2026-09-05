@@ -1,0 +1,4 @@
+add_executable(cp_example_basic basic.cpp)
+target_link_libraries(cp_example_basic PRIVATE CommunicationPlanner::CommunicationPlanner)
+cp_apply_warnings(cp_example_basic)
+add_test(NAME example_basic COMMAND cp_example_basic)

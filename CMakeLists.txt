@@ -23,8 +23,8 @@ function(cp_apply_warnings tgt)
 if(MSVC)
   target_compile_options(${tgt} PRIVATE /W4 /WX /permissive-)
   if(CP_BUILD_ASAN)
-    target_compile_options(${tgt} PRIVATE /fsanitize=address)
-    target_link_options(${tgt} PRIVATE /fsanitize=address)
+    target_compile_options(${tgt} PRIVATE /fsanitize=address /Zi)
+    target_link_options(${tgt} PRIVATE /fsanitize=address /DEBUG)
   endif()
 else()
   target_compile_options(${tgt} PRIVATE -Wall -Wextra -Wpedantic -Werror)
@@ -46,6 +46,7 @@ add_library(communication_planner STATIC
   src/coordinator.cpp
 )
 add_library(CommunicationPlanner::CommunicationPlanner ALIAS communication_planner)
+set_target_properties(communication_planner PROPERTIES EXPORT_NAME CommunicationPlanner)
 
 target_include_directories(communication_planner
   PUBLIC

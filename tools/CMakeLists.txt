@@ -1,0 +1,3 @@
+add_executable(cp_inspect cp_inspect.cpp)
+target_link_libraries(cp_inspect PRIVATE CommunicationPlanner::CommunicationPlanner)
+cp_apply_warnings(cp_inspect)

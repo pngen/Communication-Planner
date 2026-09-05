@@ -17,3 +17,8 @@ add_executable(cp_test_live test_live.cpp)
 target_link_libraries(cp_test_live PRIVATE CommunicationPlanner::CommunicationPlanner)
 cp_apply_warnings(cp_test_live)
 add_test(NAME live COMMAND cp_test_live)
+
+add_executable(cp_test_adversarial test_adversarial.cpp)
+target_link_libraries(cp_test_adversarial PRIVATE CommunicationPlanner::CommunicationPlanner)
+cp_apply_warnings(cp_test_adversarial)
+add_test(NAME adversarial COMMAND cp_test_adversarial)

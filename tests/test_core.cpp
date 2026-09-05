@@ -86,7 +86,8 @@ CP_TEST(equality_deterministic_ranking_direct_first) {
   const CommunicationPlan& plan = *po.plan;
   // direct (1 hop) should have lowest cost
   REQUIRE(plan.orderedStages.size() == 1);
-  const Link& l = s.linkMap().at(plan.orderedStages.front().link);
+  const auto lm = s.linkMap();
+  const Link& l = lm.at(plan.orderedStages.front().link);
   REQUIRE(l.source == EndpointId(10) && l.destination == EndpointId(11));
   // winner satisfies hard constraints
   CHECK(plan.feasibility == Feasibility::FEASIBLE);
